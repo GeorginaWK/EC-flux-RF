@@ -7,7 +7,12 @@ Focus: Model interpretation, predictor importance, and environmental relationshi
 
 import numpy as np
 import pandas as pd
+
+# Set matplotlib backend BEFORE importing pyplot to avoid Tkinter threading issues
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 import shap
 import warnings
 from pathlib import Path
@@ -61,8 +66,13 @@ period = "_fieldseason" # " " for full period, "_fieldseason" for field season o
 output_dir = Path(__file__).resolve().parent / "output" / site_ID / "NEE_RFE_ZaH"
 output_dir.mkdir(parents=True, exist_ok=True)
 
+# Data path: the ZaH dataset now lives in the external ML_dataset location.
+zah = Path(r"C:\Users\au800367\Projects\Python\ML_dataset\dataset_complete_output\ZaH_complete.csv")
+flux_path = zah
+if not flux_path.exists():
+    raise FileNotFoundError(f"Could not find ZaH dataset at {flux_path}.")
+
 # Load data
-flux_path = Path(__file__).resolve().parent / "data" / f"{site_ID}_complete{period}.csv"
 data = pd.read_csv(flux_path, sep=',', parse_dates=['Date'])
 data = data.sort_values('Date').reset_index(drop=True)
 
@@ -75,28 +85,29 @@ data['T_lag1'] = data['TS_0.02'].shift(1)
 target_col = 'NEE_U50_f'
 predictors = [
     # Seasonal (cyclical) - subject to RFECV
-    'sin_doy',
-    'cos_doy',
+    #'sin_doy',
+    #'cos_doy',
+    'day_length',
     
     # Environmental conditions
     'Snow_Cover_Percentage',
     'DSSM',
-    'D_SNOW',
+    #'D_SNOW',
     
     # Vegetation
-#'NDVI_nonSR_Min',
-    'NDVI_nonSR_Median',
-    'NDVI_nonSR_Max',
+    #'NDVI_nonSR_Min',
+    #'NDVI_nonSR_Median',
+    #'NDVI_nonSR_Max',
     
     # Meteorology - current day
-    'RH',
-    'TA',
-    'TA_min',
-    'TA_max',
+    #'RH',
+    #'TA',
+    #'TA_min',
+    #'TA_max',
     'RG',
-   'RG_min',
-    'RG_max',
-    'VPD_f',
+    #'RG_min',
+    #'RG_max',
+    #'VPD_f',
     'precipitation_rate',
     
     # Soil - current day
@@ -104,33 +115,56 @@ predictors = [
     'TS_10cm',
     
     # Lagged meteorology (rolling averages)
-    'TA_lag1d',
-    'TA_lag3d',
-    'TA_lag7d',
-    'TA_lag14d',
+    #'TA_lag1d',
+    #'TA_lag3d',
+    #'TA_lag7d',
+    #'TA_lag14d',
+    #'TA_lag21d',
+    #'TA_lag30d',
+    #'TA_lag60d',
     
     # Lagged soil (rolling averages)
-    'TS_lag1d',
-    'TS_lag3d',
-    'TS_lag7d',
-    'TS_lag14d',
-    'SWC_lag1d',
-     'SWC_lag7d',
-    'SWC_lag3d',
-    'SWC_lag14d',
+    #'TS_lag1d',
+    #'TS_lag3d',
+    #'TS_lag7d',
+    #'TS_lag14d',
+    #'TS_lag21d',
+    'TS_lag30d',
+    #'TS_lag60d',
+    #'SWC_lag1d',
+    #'SWC_lag3d',
+    #'SWC_lag7d',
+    #'SWC_lag14d',
+    #'SWC_lag21d',
+    'SWC_lag30d',
+    #'SWC_lag60d',
     
     # Lagged precipitation (cumulative sums)
-    'P_lag1d',
-    'P_lag3d',
-    'P_lag7d',
-    'P_lag14d'
-]
+    #'P_lag1d',
+    #'P_lag3d',
+    #'P_lag7d',
+    #'P_lag14d',
+    #'P_lag21d',
+    #'P_lag30d',
+    #'P_lag60d',
 
+    # Rolling averages and their lags
+    'TS_roll60d_mean_lag60d',
+    'SWC_roll60d_mean_lag60d',
+    #'P_roll60d_sum_lag60d'
+]
 
 
 # Compute cyclical seasonal features before dropping NaNs
 data['sin_doy'] = np.sin(2 * np.pi * data['Date'].dt.dayofyear / 365)
 data['cos_doy'] = np.cos(2 * np.pi * data['Date'].dt.dayofyear / 365)
+
+# Day length (hours) at Zackenberg (74.5N, 20.6W) based on solar declination
+site_latitude = 74.5
+doy = data['Date'].dt.dayofyear
+declination = np.radians(23.45) * np.sin(2 * np.pi * (284 + doy) / 365)
+cos_hour_angle = np.clip(-np.tan(np.radians(site_latitude)) * np.tan(declination), -1, 1)
+data['day_length'] = (24 / np.pi) * np.arccos(cos_hour_angle)
 
 # Drop rows with missing data
 data_clean = data.dropna(subset=[target_col] + predictors).copy()
@@ -725,8 +759,8 @@ print("\nKey Findings:")
 print(f"  • Best CV R²: {cv_best_score:.4f}")
 print(f"  • Test R²: {test_r2:.4f}")
 print(f"  • Test RMSE: {test_rmse:.4f}")
-print(f"\nTop 3 Most Important Features (SHAP):")
-for i in range(min(3, len(shap_importance_df))):
+print(f"\nTop 8 Most Important Features (SHAP):")
+for i in range(min(8, len(shap_importance_df))):
     row = shap_importance_df.iloc[i]
     print(f"  {i+1}. {row['Feature']}: {row['Mean_Abs_SHAP']:.4f}")
 
